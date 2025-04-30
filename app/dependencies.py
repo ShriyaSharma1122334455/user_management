@@ -8,6 +8,9 @@ from app.services.email_service import EmailService
 from app.services.jwt_service import decode_token
 from settings.config import Settings
 from fastapi import Depends
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_settings() -> Settings:
     """Return application settings."""
@@ -17,14 +20,30 @@ def get_email_service() -> EmailService:
     template_manager = TemplateManager()
     return EmailService(template_manager=template_manager)
 
+# async def get_db() -> AsyncSession:
+#         try:
+#             """Dependency that provides a database session for each request."""
+#             async_session_factory = Database.get_session_factory()
+#             async with async_session_factory() as session:
+#                 try:
+#                     yield session
+#         except Exception as e:
+#             raise HTTPException(status_code=500, detail=str(e))
+
 async def get_db() -> AsyncSession:
-    """Dependency that provides a database session for each request."""
-    async_session_factory = Database.get_session_factory()
-    async with async_session_factory() as session:
-        try:
-            yield session
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+    try:
+        async_session_factory = Database.get_session_factory()
+        async with async_session_factory() as session:
+            try:
+                yield session
+            finally:
+                await session.close()
+    except Exception as e:
+        await Database.initialize(Settings().database_url)  # Reinitialize connection
+        raise HTTPException(
+            status_code=503,
+            detail="Database connection recovered, please retry"
+        )
         
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
