@@ -2,10 +2,44 @@
 from builtins import Exception, ValueError, bool, int, str
 import secrets
 import bcrypt
+import re
 from logging import getLogger
 
 # Set up logging
 logger = getLogger(__name__)
+
+def validate_password(password: str) -> str:
+    """
+    Validate that a password meets security requirements before hashing.
+    
+    Requirements:
+    - At least 8 characters long
+    - Contains at least one uppercase letter
+    - Contains at least one lowercase letter
+    - Contains at least one digit
+    - Contains at least one special character
+    
+    Args:
+        password (str): Password to validate
+    
+    Returns:
+        str: The validated password if it meets requirements
+    
+    Raises:
+        ValueError: If password doesn't meet requirements
+    """
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters long")
+    if not re.search(r'[A-Z]', password):
+        raise ValueError("Password must contain at least one uppercase letter")
+    if not re.search(r'[a-z]', password):
+        raise ValueError("Password must contain at least one lowercase letter")
+    if not re.search(r'[0-9]', password):
+        raise ValueError("Password must contain at least one digit")
+    if not re.search(r'[^A-Za-z0-9]', password):
+        raise ValueError("Password must contain at least one special character")
+    
+    return password
 
 def hash_password(password: str, rounds: int = 12) -> str:
     """
@@ -22,9 +56,13 @@ def hash_password(password: str, rounds: int = 12) -> str:
         ValueError: If hashing the password fails.
     """
     try:
+        # Validate password before hashing
+        validate_password(password)
         salt = bcrypt.gensalt(rounds=rounds)
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
         return hashed_password.decode('utf-8')
+    except ValueError as ve:
+        raise ve  # Re-raise validation errors
     except Exception as e:
         logger.error("Failed to hash password: %s", e)
         raise ValueError("Failed to hash password") from e
@@ -49,5 +87,11 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         logger.error("Error verifying password: %s", e)
         raise ValueError("Authentication process encountered an unexpected error") from e
 
-def generate_verification_token():
-    return secrets.token_urlsafe(16)  # Generates a secure 16-byte URL-safe token
+def generate_verification_token() -> str:
+    """
+    Generates a secure URL-safe verification token.
+    
+    Returns:
+        str: A 16-byte URL-safe token
+    """
+    return secrets.token_urlsafe(16)
