@@ -6,16 +6,25 @@ from enum import Enum
 import uuid
 import re
 from app.models.user_model import UserRole
-from app.utils.nickname_gen import generate_nickname
+# from app.utils.nickname_gen import generate_nickname
 from app.utils.security import validate_password
 from app.utils.validators import validate_email_address
 
-def validate_nickname(nickname: str | None) -> str:
-    if nickname is None:
-        raise ValueError("Nickname cannot be None")
-    if len(nickname) < 3:
-        raise ValueError("Nickname must be at least 3 characters long")
-    return nickname
+from app.utils.nickname_gen import validate_or_generate_nickname
+
+def validate_nickname(nickname: Optional[str]) -> str:
+    """
+    Public validator that ensures we always return a valid nickname.
+    Either validates the provided one or generates a new valid one.
+    """
+    return validate_or_generate_nickname(nickname)
+
+# def validate_nickname(nickname: str | None) -> str:
+#     if nickname is None:
+#         raise ValueError("Nickname cannot be None")
+#     if len(nickname) < 3:
+#         raise ValueError("Nickname must be at least 3 characters long")
+#     return nickname
 
 def validate_url(url: Optional[str]) -> Optional[str]:
     if url is None:
@@ -27,7 +36,14 @@ def validate_url(url: Optional[str]) -> Optional[str]:
 
 class UserBase(BaseModel):
     email: EmailStr = Field(..., example="john.doe@example.com")
-    nickname: Optional[str] = Field(None, min_length=3, pattern=r'^[\w-]+$', example=generate_nickname())
+    nickname: Optional[str] = Field(
+        None,
+        min_length=3,
+        max_length=32,
+        pattern=r'^[\w-]+$',
+        example=validate_or_generate_nickname(),
+        description="Will be validated and made unique if not provided"
+    )
     first_name: Optional[str] = Field(None, example="John")
     last_name: Optional[str] = Field(None, example="Doe")
     bio: Optional[str] = Field(None, example="Experienced software developer specializing in web applications.")
