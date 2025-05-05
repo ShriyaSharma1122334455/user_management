@@ -52,38 +52,7 @@ class UserService:
     async def get_by_email(cls, session: AsyncSession, email: str) -> Optional[User]:
         return await cls._fetch_user(session, email=email)
 
-    # @classmethod
-    # async def create(cls, session: AsyncSession, user_data: Dict[str, str], email_service: EmailService) -> Optional[User]:
-    #     try:
-    #         validated_data = UserCreate(**user_data).model_dump()
-    #         logger.info(f"Validated data: {validated_data}")
-    #         existing_user = await cls.get_by_email(session, validated_data['email'])
-    #         if existing_user:
-    #             logger.error("User with given email already exists.")
-    #             return None
-    #         validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
-    #         new_user = User(**validated_data)
-    #         # new_nickname = validate_or_generate_nickname(new_user.nickname)
-    #         new_nickname = await validate_or_generate_nickname(session, user_data.get('nickname'))
-    #         while await cls.get_by_nickname(session, new_nickname):
-    #             new_nickname = validate_or_generate_nickname(new_user.nickname)
-    #         new_user.nickname = new_nickname
-    #         logger.info(f"User Role: {new_user.role}")
-    #         user_count = await cls.count(session)
-    #         new_user.role = UserRole.ADMIN if user_count == 0 else UserRole.ANONYMOUS            
-    #         if new_user.role == UserRole.ADMIN:
-    #             new_user.email_verified = True
-
-    #         else:
-    #             new_user.verification_token = generate_verification_token()
-    #             await email_service.send_verification_email(new_user)
-
-    #         session.add(new_user)
-    #         await session.commit()
-    #         return new_user
-    #     except ValidationError as e:
-    #         logger.error(f"Validation error during user creation: {e}")
-    #         return None
+ 
     @classmethod
     async def create(cls, session: AsyncSession, user_data: Dict[str, str], email_service: EmailService) -> Optional[User]:
         try:
@@ -167,9 +136,10 @@ class UserService:
     
 
     @classmethod
-    async def login_user(cls, session: AsyncSession, email: str, password: str) -> Optional[User]:
-        user = await cls.get_by_email(session, email)
+    async def login_user(cls, session: AsyncSession, nickname: str, password: str) -> Optional[User]:
+        user = await cls.get_by_nickname(session, nickname=nickname)
         if user:
+            logger.info(f"User with ID found")
             if user.email_verified is False:
                 return None
             if user.is_locked:
