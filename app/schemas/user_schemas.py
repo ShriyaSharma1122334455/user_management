@@ -35,14 +35,13 @@ def validate_url(url: Optional[str]) -> Optional[str]:
     return url
 
 class UserBase(BaseModel):
-    email: EmailStr = Field(..., example="john.doe@example.com")
+    email: EmailStr
     nickname: Optional[str] = Field(
         None,
         min_length=3,
         max_length=32,
         pattern=r'^[\w-]+$',
-        example=validate_or_generate_nickname(),
-        description="Will be validated and made unique if not provided"
+        example="clever_raccoon_308"
     )
     first_name: Optional[str] = Field(None, example="John")
     last_name: Optional[str] = Field(None, example="Doe")
@@ -62,7 +61,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     email: EmailStr = Field(..., example="john.doe@example.com")
-    password: str = Field(..., example="Secure*1234")
+    password: str = Field(..., example="Secure*1234", min_length=8)
 
     _validate_password = validator('password', pre=True, allow_reuse=True)(validate_password)
 
@@ -87,11 +86,12 @@ class UserUpdate(UserBase):
         return values
 
 class UserResponse(UserBase):
-    id: uuid.UUID = Field(..., example=uuid.uuid4())
+    id: uuid.UUID
+    is_professional: bool
+    role: UserRole
     email: EmailStr = Field(..., example="john.doe@example.com")
     nickname: Optional[str] = Field(None, min_length=3, pattern=r'^[\w-]+$', example=generate_nickname())    
-    is_professional: Optional[bool] = Field(default=False, example=True)
-    role: UserRole
+
 
 class LoginRequest(BaseModel):
     email: str = Field(..., example="john.doe@example.com")
