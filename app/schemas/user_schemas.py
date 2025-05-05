@@ -6,6 +6,18 @@ from enum import Enum
 import uuid
 import re
 from app.models.user_model import UserRole
+from app.utils.security import validate_password
+from app.utils.validators import validate_email_address
+
+from app.utils.nickname_gen import validate_or_generate_nickname
+
+def validate_nickname(nickname: Optional[str]) -> str:
+    """
+    Public validator that ensures we always return a valid nickname.
+    Either validates the provided one or generates a new valid one.
+    """
+    return validate_or_generate_nickname(nickname)
+
 from app.utils.nickname_gen import get_valid_nickname, validate_nickname, generate_nickname
 from app.utils.security import validate_password
 from app.utils.validators import validate_email_address
@@ -18,6 +30,7 @@ def validate_nickname(nickname: str | None) -> str:
         raise ValueError("Nickname must be at least 3 characters long")
     return nickname
 
+
 def validate_url(url: Optional[str]) -> Optional[str]:
     if url is None:
         return url
@@ -27,6 +40,15 @@ def validate_url(url: Optional[str]) -> Optional[str]:
     return url
 
 class UserBase(BaseModel):
+
+    email: EmailStr
+    nickname: Optional[str] = Field(
+        None,
+        min_length=3,
+        max_length=32,
+        pattern=r'^[\w-]+$',
+        example="clever_raccoon_308"
+
     email: EmailStr = Field(..., example="john.doe@example.com")
     # nickname: Optional[str] = Field(None, min_length=3, pattern=r'^[\w-]+$', example=generate_nickname())
     nickname: Optional[str] = Field(
@@ -35,6 +57,7 @@ class UserBase(BaseModel):
         max_length=20,
         pattern=r'^[a-zA-Z0-9_-]+$',
         example=get_valid_nickname()
+
     )
     first_name: Optional[str] = Field(None, example="John")
     last_name: Optional[str] = Field(None, example="Doe")
@@ -57,7 +80,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     email: EmailStr = Field(..., example="john.doe@example.com")
-    password: str = Field(..., example="Secure*1234")
+    password: str = Field(..., example="Secure*1234", min_length=8)
 
     _validate_password = validator('password', pre=True, allow_reuse=True)(validate_password)
 
@@ -82,11 +105,12 @@ class UserUpdate(UserBase):
         return values
 
 class UserResponse(UserBase):
-    id: uuid.UUID = Field(..., example=uuid.uuid4())
+    id: uuid.UUID
+    is_professional: bool
+    role: UserRole
     email: EmailStr = Field(..., example="john.doe@example.com")
     nickname: Optional[str] = Field(None, min_length=3, pattern=r'^[\w-]+$', example=generate_nickname())    
-    is_professional: Optional[bool] = Field(default=False, example=True)
-    role: UserRole
+
 
 class LoginRequest(BaseModel):
     email: str = Field(..., example="john.doe@example.com")

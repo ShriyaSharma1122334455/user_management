@@ -9,12 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_email_service, get_settings
 from app.models.user_model import User
 from app.schemas.user_schemas import UserCreate, UserUpdate
-from app.utils.nickname_gen import generate_nickname
+# from app.utils.nickname_gen import generate_nickname
+from app.utils.nickname_gen import validate_or_generate_nickname
 from app.utils.security import generate_verification_token, hash_password, verify_password
 from uuid import UUID
 from app.services.email_service import EmailService
 from app.models.user_model import UserRole
 import logging
+from fastapi import HTTPException
+
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -49,37 +52,76 @@ class UserService:
     async def get_by_email(cls, session: AsyncSession, email: str) -> Optional[User]:
         return await cls._fetch_user(session, email=email)
 
+    # @classmethod
+    # async def create(cls, session: AsyncSession, user_data: Dict[str, str], email_service: EmailService) -> Optional[User]:
+    #     try:
+    #         validated_data = UserCreate(**user_data).model_dump()
+    #         logger.info(f"Validated data: {validated_data}")
+    #         existing_user = await cls.get_by_email(session, validated_data['email'])
+    #         if existing_user:
+    #             logger.error("User with given email already exists.")
+    #             return None
+    #         validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
+    #         new_user = User(**validated_data)
+    #         # new_nickname = validate_or_generate_nickname(new_user.nickname)
+    #         new_nickname = await validate_or_generate_nickname(session, user_data.get('nickname'))
+    #         while await cls.get_by_nickname(session, new_nickname):
+    #             new_nickname = validate_or_generate_nickname(new_user.nickname)
+    #         new_user.nickname = new_nickname
+    #         logger.info(f"User Role: {new_user.role}")
+    #         user_count = await cls.count(session)
+    #         new_user.role = UserRole.ADMIN if user_count == 0 else UserRole.ANONYMOUS            
+    #         if new_user.role == UserRole.ADMIN:
+    #             new_user.email_verified = True
+
+    #         else:
+    #             new_user.verification_token = generate_verification_token()
+    #             await email_service.send_verification_email(new_user)
+
+    #         session.add(new_user)
+    #         await session.commit()
+    #         return new_user
+    #     except ValidationError as e:
+    #         logger.error(f"Validation error during user creation: {e}")
+    #         return None
     @classmethod
     async def create(cls, session: AsyncSession, user_data: Dict[str, str], email_service: EmailService) -> Optional[User]:
         try:
             validated_data = UserCreate(**user_data).model_dump()
-            logger.info(f"Validated data: {validated_data}")
-            existing_user = await cls.get_by_email(session, validated_data['email'])
-            if existing_user:
-                logger.error("User with given email already exists.")
-                return None
+        
+        # Check for existing email
+            if await cls.get_by_email(session, validated_data['email']):
+                raise HTTPException(status_code=400, detail="Email already registered")
+        
+        # Handle nickname
+            provided_nickname = validated_data.get('nickname')
+            validated_data['nickname'] = await validate_or_generate_nickname(
+                session, 
+                provided_nickname
+            )
+        
+        # Hash password and create user
             validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
             new_user = User(**validated_data)
-            new_nickname = generate_nickname()
-            while await cls.get_by_nickname(session, new_nickname):
-                new_nickname = generate_nickname()
-            new_user.nickname = new_nickname
-            logger.info(f"User Role: {new_user.role}")
+        
+        # Set role
             user_count = await cls.count(session)
-            new_user.role = UserRole.ADMIN if user_count == 0 else UserRole.ANONYMOUS            
-            if new_user.role == UserRole.ADMIN:
-                new_user.email_verified = True
-
-            else:
-                new_user.verification_token = generate_verification_token()
-                await email_service.send_verification_email(new_user)
-
+            new_user.role = UserRole.ADMIN if user_count == 0 else UserRole.ANONYMOUS
+        
+        # Save to database
             session.add(new_user)
             await session.commit()
+            await session.refresh(new_user)
+        
+        # Send verification email if not admin
+            if new_user.role != UserRole.ADMIN:
+                await email_service.send_verification_email(new_user.email)
+        
             return new_user
-        except ValidationError as e:
-            logger.error(f"Validation error during user creation: {e}")
-            return None
+    
+        except Exception as e:
+            await session.rollback()
+            raise HTTPException(status_code=400, detail=str(e))
 
     @classmethod
     async def update(cls, session: AsyncSession, user_id: UUID, update_data: Dict[str, str]) -> Optional[User]:
