@@ -10,12 +10,13 @@ from app.utils.nickname_gen import get_valid_nickname, validate_nickname, genera
 from app.utils.security import validate_password
 from app.utils.validators import validate_email_address
 
-# def validate_nickname(nickname: str) -> str:
-#     if len(nickname) < 3:
-#         raise ValueError("Nickname must be at least 3 characters long")
-#     if not re.match(r'^[\w-]+$', nickname):
-#         raise ValueError("Nickname can only contain letters, numbers, underscores, and hyphens")
-#     return nickname
+
+def validate_nickname(nickname: str | None) -> str:
+    if nickname is None:
+        raise ValueError("Nickname cannot be None")
+    if len(nickname) < 3:
+        raise ValueError("Nickname must be at least 3 characters long")
+    return nickname
 
 def validate_url(url: Optional[str]) -> Optional[str]:
     if url is None:
