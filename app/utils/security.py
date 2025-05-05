@@ -8,6 +8,39 @@ from logging import getLogger
 # Set up logging
 logger = getLogger(__name__)
 
+# def validate_password(password: str) -> str:
+#     """
+#     Validate that a password meets security requirements before hashing.
+    
+#     Requirements:
+#     - At least 8 characters long
+#     - Contains at least one uppercase letter
+#     - Contains at least one lowercase letter
+#     - Contains at least one digit
+#     - Contains at least one special character
+    
+#     Args:
+#         password (str): Password to validate
+    
+#     Returns:
+#         str: The validated password if it meets requirements
+    
+#     Raises:
+#         ValueError: If password doesn't meet requirements
+#     """
+#     if len(password) < 8:
+#         raise ValueError("Password must be at least 8 characters long")
+#     if not re.search(r'[A-Z]', password):
+#         raise ValueError("Password must contain at least one uppercase letter")
+#     if not re.search(r'[a-z]', password):
+#         raise ValueError("Password must contain at least one lowercase letter")
+#     if not re.search(r'[0-9]', password):
+#         raise ValueError("Password must contain at least one digit")
+#     if not re.search(r'[^A-Za-z0-9]', password):
+#         raise ValueError("Password must contain at least one special character")
+    
+#     return password
+
 def validate_password(password: str) -> str:
     """
     Validate that a password meets security requirements before hashing.
@@ -28,16 +61,24 @@ def validate_password(password: str) -> str:
     Raises:
         ValueError: If password doesn't meet requirements
     """
+    if not isinstance(password, str):
+        raise TypeError("Password must be a string")
+    
+    error =[]
+
     if len(password) < 8:
         raise ValueError("Password must be at least 8 characters long")
-    if not re.search(r'[A-Z]', password):
+    if not any(c.isupper() for c in password):
         raise ValueError("Password must contain at least one uppercase letter")
-    if not re.search(r'[a-z]', password):
+    if not any(c.islower() for c in password):
         raise ValueError("Password must contain at least one lowercase letter")
-    if not re.search(r'[0-9]', password):
+    if not any(c.isdigit() for c in password):
         raise ValueError("Password must contain at least one digit")
-    if not re.search(r'[^A-Za-z0-9]', password):
+    if not any(not c.isalnum() for c in password):
         raise ValueError("Password must contain at least one special character")
+    
+    if error:
+        raise ValueError(", ".join(error))
     
     return password
 

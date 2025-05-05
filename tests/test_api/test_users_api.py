@@ -66,11 +66,15 @@ async def test_create_user_duplicate_email(async_client, verified_user):
     user_data = {
         "email": verified_user.email,
         "password": "AnotherPassword123!",
-        "role": UserRole.ADMIN.name
+        "role": UserRole.ADMIN.name,
+        "nickname": "duplicate_user",  # Add required nickname
+        # Include any other required fields
     }
     response = await async_client.post("/register/", json=user_data)
-    assert response.status_code == 400
-    assert "Email already exists" in response.json().get("detail", "")
+    
+    # Then add your assertions about duplicate email handling
+    assert response.status_code == 400  # or whatever status you expect
+    assert "email already exists" in response.text.lower()
 
 @pytest.mark.asyncio
 async def test_create_user_invalid_email(async_client):

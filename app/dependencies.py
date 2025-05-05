@@ -9,6 +9,8 @@ from app.services.jwt_service import decode_token
 from settings.config import Settings
 from fastapi import Depends
 import logging
+from sqlalchemy.exc import DatabaseError
+from typing import AsyncGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -30,20 +32,57 @@ def get_email_service() -> EmailService:
 #         except Exception as e:
 #             raise HTTPException(status_code=500, detail=str(e))
 
-async def get_db() -> AsyncSession:
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     try:
+        """Dependency that provides a database session for each request."""
         async_session_factory = Database.get_session_factory()
         async with async_session_factory() as session:
             try:
                 yield session
-            finally:
-                await session.close()
+            except DatabaseError as e:
+                raise HTTPException(status_code=503, detail="Database connection failed")
     except Exception as e:
-        await Database.initialize(Settings().database_url)  # Reinitialize connection
-        raise HTTPException(
-            status_code=503,
-            detail="Database connection recovered, please retry"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+# async def get_db() -> AsyncSession:
+#     try:
+#         async_session_factory = Database.get_session_factory()
+#         async with async_session_factory() as session:
+#             try:
+#                 yield session
+#             finally:
+#                 await session.close()
+#     except Exception as e:
+#         await Database.initialize(Settings().database_url)  # Reinitialize connection
+#         raise HTTPException(
+#             status_code=503,
+#             detail="Database connection recovered, please retry"
+#         )
+
+# async def get_db() -> AsyncSession:
+#     try:
+#         async_session_factory = Database.get_session_factory()
+#         async with async_session_factory() as session:
+#             try:
+#                 yield session
+#             finally:
+#                 await session.close()
+#     except TypeError as e:
+#         # Handle the TypeError exception specifically
+#         if "object of type 'bool' has no len()" in str(e):
+#             raise ValueError("Nickname must be a string")
+#         else:
+#             raise
+#     except Exception as e:
+#         await Database.initialize(Settings().database_url)  # Reinitialize connection
+#         raise HTTPException(
+#             status_code=503,
+#             detail="Database connection recovered, please retry"
+#         )
+#     except TypeError as e:
+#         logger.error("TypeError exception occurred", exc_info=True)
+#         raise
         
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
