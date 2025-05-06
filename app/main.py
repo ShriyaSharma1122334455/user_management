@@ -7,6 +7,11 @@ from app.dependencies import get_settings
 from app.routers import user_routes
 from app.utils.api_description import getDescription
 from app.utils.common import setup_logging
+import logging
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
 app = FastAPI(
     title="User Management",
     description=getDescription(),

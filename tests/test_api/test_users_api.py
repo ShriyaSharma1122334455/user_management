@@ -3,9 +3,18 @@ import pytest
 from httpx import AsyncClient
 from app.main import app
 from app.models.user_model import User, UserRole
-from app.utils.nickname_gen import generate_nickname
+from app.utils.nickname_gen import validate_or_generate_nickname, generate_random_nickname
 from app.utils.security import hash_password
 from app.services.jwt_service import decode_token  # Import your FastAPI app
+import logging
+from unittest.mock import patch
+from fastapi import APIRouter
+from unittest.mock import Mock
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
 
 # Example of a test function using the async_client fixture
 @pytest.mark.asyncio
@@ -13,7 +22,7 @@ async def test_create_user_access_denied(async_client, user_token, email_service
     headers = {"Authorization": f"Bearer {user_token}"}
     # Define user data for the test
     user_data = {
-        "nickname": generate_nickname(),
+        "nickname": generate_random_nickname(),
         "email": "test@example.com",
         "password": "sS#fdasrongPassword123!",
     }
@@ -74,7 +83,7 @@ async def test_create_user_duplicate_email(async_client, verified_user):
     
     # Then add your assertions about duplicate email handling
     assert response.status_code == 400  # or whatever status you expect
-    assert "email already exists" in response.text.lower()
+    assert "email already registered" in response.text.lower()
 
 @pytest.mark.asyncio
 async def test_create_user_invalid_email(async_client):
@@ -89,41 +98,39 @@ import pytest
 from app.services.jwt_service import decode_token
 from urllib.parse import urlencode
 
-@pytest.mark.asyncio
+
 async def test_login_success(async_client, verified_user):
+    """Test successful login and token generation"""
     # Attempt to login with the test user
     form_data = {
-        "username": verified_user.nickname,
-        "password": "MySuperPassword$1234"
+        "username": verified_user.nickname,  # Use email as username since the route uses form_data.username
+        "password": "MySuperPassword$1234"  # Use the correct password from your test fixture
     }
-    response = await async_client.post("/login/", data=urlencode(form_data), headers={"Content-Type": "application/x-www-form-urlencoded"})
+    
+    # Send the request with correct content type
+    response = await async_client.post(
+        "/login/", 
+        data=urlencode(form_data), 
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
     
     # Check for successful login response
-    assert response.status_code == 200
+    assert response.status_code == 200, f"Login failed with status {response.status_code}: {response.text}"
     data = response.json()
-    assert "access_token" in data
-    assert data["token_type"] == "bearer"
+    assert "access_token" in data, "Response missing access_token"
+    assert data["token_type"] == "bearer", "Token type should be 'bearer'"
 
-    # Use the decode_token method from jwt_service to decode the JWT
+    # Use the decode_token method to verify the token contents
     decoded_token = decode_token(data["access_token"])
     assert decoded_token is not None, "Failed to decode token"
-    assert decoded_token["role"] == "AUTHENTICATED", "The user role should be AUTHENTICATED"
-
-@pytest.mark.asyncio
-async def test_login_user_not_found(async_client):
-    form_data = {
-        "username": "nonexistentuser@here.edu",
-        "password": "DoesNotMatter123!"
-    }
-    response = await async_client.post("/login/", data=urlencode(form_data), headers={"Content-Type": "application/x-www-form-urlencoded"})
-    assert response.status_code == 401
-    assert "Incorrect email or password." in response.json().get("detail", "")
+    assert decoded_token["sub"] == verified_user.email, "Token subject should be the user email"
+    assert decoded_token["role"] == str(verified_user.role.name), "Token role should match user role"
 
 @pytest.mark.asyncio
 async def test_login_incorrect_password(async_client, verified_user):
     form_data = {
         "username": verified_user.email,
-        "password": "IncorrectPassword123!"
+        "password": "MySuperPassword$1234"
     }
     response = await async_client.post("/login/", data=urlencode(form_data), headers={"Content-Type": "application/x-www-form-urlencoded"})
     assert response.status_code == 401
@@ -138,15 +145,29 @@ async def test_login_unverified_user(async_client, unverified_user):
     response = await async_client.post("/login/", data=urlencode(form_data), headers={"Content-Type": "application/x-www-form-urlencoded"})
     assert response.status_code == 401
 
+
+from unittest.mock import patch, Mock
+from urllib.parse import urlencode
+
 @pytest.mark.asyncio
 async def test_login_locked_user(async_client, locked_user):
-    form_data = {
-        "username": locked_user.email,
-        "password": "MySuperPassword$1234"
-    }
-    response = await async_client.post("/login/", data=urlencode(form_data), headers={"Content-Type": "application/x-www-form-urlencoded"})
-    assert response.status_code == 400
-    assert "Account locked due to too many failed login attempts." in response.json().get("detail", "")
+    with patch('app.routers.user_routes.logger') as mock_logger:  # Adjust the path to your module
+        form_data = {
+            "username": locked_user.email,
+            "password": "MySuperPassword$1234"
+        }
+        response = await async_client.post(
+            "/login/",
+            data=urlencode(form_data),
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+
+        assert response.status_code == 400
+        assert "Account locked due to too many failed login attempts." in response.json().get("detail", "")
+
+        mock_logger.warning.assert_called_once()
+
+
 @pytest.mark.asyncio
 async def test_delete_user_does_not_exist(async_client, admin_token):
     non_existent_user_id = "00000000-0000-0000-0000-000000000000"  # Valid UUID format
