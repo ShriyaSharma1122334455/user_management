@@ -1,4 +1,7 @@
 from email_validator import validate_email, EmailNotValidError
+import logging
+
+logger = logging.getLogger(__name__)
 
 def validate_email_address(email: str | None) -> str:
     """

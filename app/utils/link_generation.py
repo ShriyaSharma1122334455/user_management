@@ -6,6 +6,9 @@ from uuid import UUID
 from fastapi import Request
 from app.schemas.link_schema import Link
 from app.schemas.pagination_schema import PaginationLink
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Utility function to create a link
 def create_link(rel: str, href: str, method: str = "GET", action: str = None) -> Link:
