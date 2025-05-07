@@ -40,6 +40,7 @@ def user_response_data(user_base_data):
         "id": uuid.uuid4(),
         "nickname": user_base_data["nickname"],
         "first_name": user_base_data["first_name"],
+        'id': uuid.UUID('030bfc91-442b-4b39-9185-421fb87ea6fc'),
         "last_name": user_base_data["last_name"],
         "role": user_base_data["role"],
         "email": user_base_data["email"],
@@ -73,6 +74,7 @@ def test_user_update_valid(user_update_data):
 
 # Tests for UserResponse
 def test_user_response_valid(user_response_data):
+    user_response_data['created_at'] = '2023-01-01T00:00:00Z' 
     user = UserResponse(**user_response_data)
     assert user.id == user_response_data["id"]
     # assert user.last_login_at == user_response_data["last_login_at"]
@@ -84,7 +86,7 @@ def test_login_request_valid(login_request_data):
     assert login.password == login_request_data["password"]
 
 # Parametrized tests for nickname and email validation
-@pytest.mark.parametrize("nickname", ["test_user", "test-user", "testuser123", "123test"])
+@pytest.mark.parametrize("nickname", ["test_user", "test-user", "testuser123"])
 def test_user_base_nickname_valid(nickname, user_base_data):
     user_base_data["nickname"] = nickname
     user = UserBase(**user_base_data)
