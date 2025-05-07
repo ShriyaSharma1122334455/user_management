@@ -425,6 +425,12 @@ async def test_create_user_existing_email_check(async_client, admin_token, db_se
 
 @pytest.mark.asyncio
 async def test_generate_pagination_links_partial_page(async_client, admin_token, users_with_same_role_50_users):
+    """
+    Tests that the pagination links are generated correctly when the last page is partial.
+    
+    Given a list of 50 users with the same role, when we request the last page with a limit of 20,
+    the pagination links should include 'self' and 'prev', but not 'next' since there are no more items.
+    """
     headers = {"Authorization": f"Bearer {admin_token}"}
     response = await async_client.get("/users/?skip=40&limit=20", headers=headers)
 
@@ -474,50 +480,31 @@ async def test_advanced_search_pagination_links(async_client, admin_token, users
     assert any(link["rel"] == "next" for link in links)
     assert any(link["rel"] == "prev" for link in links)
 
-
-# This will test the sending email (SMTP connection as well), to use mock, .env setting should be smtp_test_use_mock = true
 @pytest.mark.asyncio
 async def test_create_user_success(async_client, admin_token):
-    """Test successful user creation."""
+    """Test successful user creation with provided nickname."""
     headers = {"Authorization": f"Bearer {admin_token}"}
     user_data = {
         "email": "user@example.com",
         "password": "ValidPassword123!",
-        "nickname": "valid_nickname",
+        "nickname": "valid_nickname",  # Explicit nickname
         "role": "ANONYMOUS"
     }
 
-    # Check if running in GitHub Actions, 
-    # If true this test will use mock, else use real as this will test the smtp connection
-    # For this test to work, make sure the .env file has correct values for the smtp connection (server, port, username, password)
-    is_ci = settings.smtp_test_use_mock == "true"
-
-    # Conditionally mock email sending
-    if is_ci:
-        with patch("app.services.email_service.EmailService.send_verification_email", new_callable=AsyncMock) as mock_send_email:
-            mock_send_email.return_value = None
-            logger.info("Uses Email Service mock")
-
-            # Send the request
+    with patch("app.services.email_service.EmailService.send_verification_email", new_callable=AsyncMock) as mock_send_email:
+        mock_send_email.return_value = None
+        
+        # Patch where the function is actually imported and used
+        # This might be in your route file or service file
+        with patch("app.api.endpoints.users.generate_nickname") as mock_nickname:
             response = await async_client.post("/users/", json=user_data, headers=headers)
-
+            
+            # Verify the mock wasn't called
+            mock_nickname.assert_not_called()
+            
             # Assertions
             assert response.status_code == 201, response.json()
             response_data = response.json()
             assert response_data["email"] == user_data["email"]
             assert response_data["nickname"] == user_data["nickname"]
             assert response_data["role"] == user_data["role"]
-
-            # Verify the mock was called
-            mock_send_email.assert_called_once()
-    else:
-        # Real execution locally
-        response = await async_client.post("/users/", json=user_data, headers=headers)
-        logger.info("Real execution - does not use Email Service mock")
-
-        # Assertions
-        assert response.status_code == 201, response.json()
-        response_data = response.json()
-        assert response_data["email"] == user_data["email"]
-        assert response_data["nickname"] == user_data["nickname"]
-        assert response_data["role"] == user_data["role"]

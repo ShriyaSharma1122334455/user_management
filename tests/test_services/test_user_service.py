@@ -11,7 +11,7 @@ pytestmark = pytest.mark.asyncio
 
 # Test creating a user with valid data
 async def test_create_user_with_valid_data(db_session, email_service):
-    valid_nickname = await generate_nickname(db_session)
+    valid_nickname = generate_nickname()
     user_data = {
         "nickname": valid_nickname,
         "email": "valid_user@example.com",
@@ -25,7 +25,7 @@ async def test_create_user_with_valid_data(db_session, email_service):
 # Test creating a user with invalid data
 async def test_create_user_with_invalid_data(db_session, email_service):
     # Generate a valid nickname first - don't reference undefined user variable
-    valid_nickname = generate_nickname(db_session)
+    valid_nickname = generate_nickname()
     
     user_data = {
         "nickname": valid_nickname,  # Use valid nickname to focus on other validation errors

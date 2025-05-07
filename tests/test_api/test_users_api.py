@@ -22,7 +22,7 @@ async def test_create_user_access_denied(async_client, user_token, email_service
     headers = {"Authorization": f"Bearer {user_token}"}
     # Define user data for the test
     user_data = {
-        "nickname": generate_random_nickname(),
+        "nickname": generate_nickname(),
         "email": "test@example.com",
         "password": "sS#fdasrongPassword123!",
     }
