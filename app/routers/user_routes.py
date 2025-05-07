@@ -23,26 +23,24 @@ from datetime import timedelta
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List, Tuple, Optional
 from app.dependencies import get_current_user, get_db, get_email_service, require_role
 from app.schemas.pagination_schema import EnhancedPagination
 from app.schemas.token_schema import TokenResponse
-from app.schemas.user_schemas import LoginRequest, UserBase, UserCreate, UserListResponse, UserResponse, UserUpdate
+from app.schemas.user_schemas import LoginRequest, UserBase, UserCreate, UserListResponse, UserResponse, UserUpdate, UserRole
 from app.services.user_service import UserService
 from app.services.jwt_service import create_access_token
 from app.utils.link_generation import create_user_links, generate_pagination_links
 from app.dependencies import get_settings
 from app.services.email_service import EmailService
+from app.schemas.user_schemas import UserSearchFilterRequest, UserListResponse, UserSearchQueryRequest
 import logging
-
-
-router = APIRouter()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-
 settings = get_settings()
-logger =logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 router = APIRouter()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login/")
 
 @router.get("/users/{user_id}", response_model=UserResponse, name="get_user", tags=["User Management Requires (Admin or Manager Roles)"])
 async def get_user(user_id: UUID, request: Request, db: AsyncSession = Depends(get_db), token: str = Depends(oauth2_scheme), current_user: dict = Depends(require_role(["ADMIN", "MANAGER"]))):
@@ -79,12 +77,6 @@ async def get_user(user_id: UUID, request: Request, db: AsyncSession = Depends(g
         links=create_user_links(user.id, request)  
     )
 
-# Additional endpoints for update, delete, create, and list users follow a similar pattern, using
-# asynchronous database operations, handling security with OAuth2PasswordBearer, and enhancing response
-# models with dynamic HATEOAS links.
-
-# This approach not only ensures that the API is secure and efficient but also promotes a better client
-# experience by adhering to REST principles and providing self-discoverable operations.
 
 @router.put("/users/{user_id}", response_model=UserResponse, name="update_user", tags=["User Management Requires (Admin or Manager Roles)"])
 async def update_user(user_id: UUID, user_update: UserUpdate, request: Request, db: AsyncSession = Depends(get_db), token: str = Depends(oauth2_scheme), current_user: dict = Depends(require_role(["ADMIN", "MANAGER"]))):
@@ -172,6 +164,45 @@ async def create_user(user: UserCreate, request: Request, db: AsyncSession = Dep
         links=create_user_links(created_user.id, request)
     )
 
+@router.get("/users-search", response_model=UserListResponse, tags=["User Search Requires (Admin Role)"])
+async def basic_search_users(
+    request: Request,
+    query: UserSearchQueryRequest = Depends(),  # Use the request schema
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_role(["ADMIN"])),
+):
+    
+    total_users, users = await UserService.search_and_filter_users(
+        db,
+        username=query.username,
+        email=query.email,
+        role=query.role,
+        is_locked=query.is_locked,
+        skip=query.skip,
+        limit=query.limit,
+    )
+
+    user_responses = [UserResponse.model_validate(user) for user in users]
+    pagination_links = generate_pagination_links(request, query.skip, query.limit, total_users)
+
+    # Include query filters in the response
+    filters = UserSearchFilterRequest(
+        username=query.username,
+        email=query.email,
+        role=query.role,
+        is_locked=query.is_locked,
+        skip=query.skip,
+        limit=query.limit,
+    )
+
+    return UserListResponse(
+        items=user_responses,
+        total=total_users,
+        page=(query.skip // query.limit) + 1,
+        size=len(user_responses),
+        links=pagination_links,
+        filters=filters,
+    )
 
 @router.get("/users/", response_model=UserListResponse, tags=["User Management Requires (Admin or Manager Roles)"])
 async def list_users(
@@ -196,9 +227,9 @@ async def list_users(
         total=total_users,
         page=skip // limit + 1,
         size=len(user_responses),
-        links=pagination_links  # Ensure you have appropriate logic to create these links
+        links=pagination_links,  # Ensure you have appropriate logic to create these links
+        filters=None,  # Set filters explicitly if not used
     )
-
 
 @router.post("/register/", response_model=UserResponse, tags=["Login and Registration"])
 async def register(user_data: UserCreate, session: AsyncSession = Depends(get_db), email_service: EmailService = Depends(get_email_service)):
@@ -207,60 +238,64 @@ async def register(user_data: UserCreate, session: AsyncSession = Depends(get_db
         return user
     raise HTTPException(status_code=400, detail="Email already exists")
 
-# @router.post("/login/", response_model=TokenResponse, tags=["Login and Registration"])
-# async def login(form_data: OAuth2PasswordRequestForm = Depends(), session: AsyncSession = Depends(get_db)):
-
-#     try:
-#         logger.info(f"Checking username {form_data.username} ")
-#         if await UserService.is_account_locked(session, form_data.username):
-#             raise HTTPException(status_code=400, detail="Account locked due to too many failed login attempts.")
-#         logger.info(f"Checking username {form_data.username} ")
- 
-#         user = await UserService.login_user(session, form_data.username, form_data.password)
-#         logger.info(f"User : {user} ")
-#         if user:
-#             access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
-#             access_token = create_access_token(
-#                 data={"sub": user.email, "role": str(user.role.name)},
-#                 expires_delta=access_token_expires
-#             )
-#             return {"access_token": access_token, "token_type": "bearer"}
-#         raise HTTPException(status_code=401, detail="Incorrect email or password.")
-#     except HTTPException as e:
-#          # Re-raise HTTP exceptions as-is
-#         raise e
-#     except Exception as e:
-#          # Log unexpected errors and return a generic 500 response
-#         logger.error(f"Unexpected error during login: {e}")
-#         raise HTTPException(status_code=500, detail="An unexpected error occurred.")
-    
-@router.post("/login/", include_in_schema=False, response_model=TokenResponse, tags=["Login and Registration"])
+@router.post("/login/", response_model=TokenResponse, tags=["Login and Registration"])
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), session: AsyncSession = Depends(get_db)):
-    if await UserService.is_account_locked(session, form_data.username):
-        logger.warning(f"Login attempt failed for locked account: {form_data.username}")
-        raise HTTPException(status_code=400, detail="Account locked due to too many failed login attempts.")
+    try:
+        logger.info(f"Checking username {form_data.username} ")
+        if await UserService.is_account_locked(session, form_data.username):
+            raise HTTPException(status_code=400, detail="Account locked due to too many failed login attempts.")
+        logger.info(f"Checking username {form_data.username} ")
 
-    user = await UserService.login_user(session, form_data.username, form_data.password)
-    if user:
-        access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
-
-        access_token = create_access_token(
-            data={"sub": user.email, "role": str(user.role.name)},
-            expires_delta=access_token_expires
-        )
-
-        return {"access_token": access_token, "token_type": "bearer"}
-    raise HTTPException(status_code=401, detail="Incorrect email or password.")
+        user = await UserService.login_user(session, form_data.username, form_data.password)
+        logger.info(f"User : {user} ")
+        if user:
+            access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+            access_token = create_access_token(
+                data={"sub": user.email, "role": str(user.role.name)},
+                expires_delta=access_token_expires
+            )
+            return {"access_token": access_token, "token_type": "bearer"}
+        raise HTTPException(status_code=401, detail="Incorrect email or password.")
+    except HTTPException as e:
+        # Re-raise HTTP exceptions as-is
+        raise e
+    except Exception as e:
+        # Log unexpected errors and return a generic 500 response
+        logger.error(f"Unexpected error during login: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
 
 @router.get("/verify-email/{user_id}/{token}", status_code=status.HTTP_200_OK, name="verify_email", tags=["Login and Registration"])
 async def verify_email(user_id: UUID, token: str, db: AsyncSession = Depends(get_db), email_service: EmailService = Depends(get_email_service)):
-    """
-    Verify user's email with a provided token.
     
-    - **user_id**: UUID of the user to verify.
-    - **token**: Verification token sent to the user's email.
-    """
     if await UserService.verify_email_with_token(db, user_id, token):
         return {"message": "Email verified successfully"}
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification token")
+
+@router.post("/users-advanced-search", response_model=UserListResponse, tags=["User Search Requires (Admin Role)"])
+async def advanced_search_users(
+    request: Request,
+    filters: UserSearchFilterRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_role(["ADMIN"])),
+):
+    
+    total_users, users = await UserService.advanced_search_users(
+        db,
+        filters=filters.dict(exclude_none=True),
+    )
+
+    user_responses = [UserResponse.model_validate(user) for user in users]
+
+    # Correctly pass total_items to generate_pagination_links
+    pagination_links = generate_pagination_links(request, filters.skip, filters.limit, total_users)
+
+    # Include filters in the response
+    return UserListResponse(
+        items=user_responses,
+        total=total_users,
+        page=(filters.skip // filters.limit) + 1,
+        size=len(user_responses),
+        links=pagination_links,
+        filters=filters,  # Return filters for better client-side support
+    )
