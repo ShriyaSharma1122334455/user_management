@@ -65,7 +65,7 @@ async def test_register_duplicate_email(async_client, verified_user):
     }
     response = await async_client.post("/register/", json=user_data)
     assert response.status_code == 400  # The expected status code for duplicate email
-    assert "Email already exists" in response.json().get("detail", "")
+    assert "Email already registered" in response.json().get("detail", "")
 
 
 
