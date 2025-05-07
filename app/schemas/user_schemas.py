@@ -6,18 +6,10 @@ from enum import Enum
 import uuid
 import re
 from app.models.user_model import UserRole
+from app.utils.nickname_gen import generate_nickname
 from app.utils.security import validate_password
-from app.utils.validators import validate_email_address
-from app.utils.nickname_gen import validate_or_generate_nickname, generate_random_nickname
+from app.schemas.pagination_schema import PaginationLink
 
-def validate_nickname(nickname: Optional[str]) -> str:
-    """
-    Public validator that ensures we always return a valid nickname.
-    Either validates the provided one or generates a new valid one.
-    """
-    if nickname is None:
-        return generate_random_nickname()
-    return nickname
 
 def validate_url(url: Optional[str]) -> Optional[str]:
     if url is None:
@@ -27,184 +19,148 @@ def validate_url(url: Optional[str]) -> Optional[str]:
         raise ValueError('Invalid URL format')
     return url
 
+def validate_nickname(value: str) -> str:
+    """
+    Validate the nickname according to the rules:
+    - Must start with a letter.
+    - Must be 3-30 characters long.
+    - Can only contain alphanumeric characters, underscores, or hyphens.
+    """
+    if not re.match(r"^[a-zA-Z][a-zA-Z0-9_-]{2,29}$", value):
+        raise ValueError(
+            "Nickname must start with a letter, be 3-30 characters long, and contain only alphanumeric characters, underscores, or hyphens."
+        )
+    return value
+
 class UserBase(BaseModel):
     email: EmailStr = Field(..., example="john.doe@example.com")
     nickname: Optional[str] = Field(
         None,
+        example=generate_nickname(),
         min_length=3,
-        max_length=32,
-        pattern=r'^[\w-]+$',
-        example="clever_raccoon_308"
+        max_length=30
     )
     first_name: Optional[str] = Field(None, example="John")
     last_name: Optional[str] = Field(None, example="Doe")
     bio: Optional[str] = Field(None, example="Experienced software developer specializing in web applications.")
     profile_picture_url: Optional[str] = Field(None, example="https://example.com/profiles/john.jpg")
-    linkedin_profile_url: Optional[str] = Field(None, example="https://linkedin.com/in/johndoe")
+    linkedin_profile_url: Optional[str] =Field(None, example="https://linkedin.com/in/johndoe")
     github_profile_url: Optional[str] = Field(None, example="https://github.com/johndoe")
-    role: UserRole = Field(default=UserRole.ANONYMOUS)
+    role: UserRole
 
-    # Validators
-    _validate_email = validator('email', pre=True, allow_reuse=True)(validate_email_address)
     _validate_urls = validator('profile_picture_url', 'linkedin_profile_url', 'github_profile_url', pre=True, allow_reuse=True)(validate_url)
-    
-    @validator('nickname', pre=True)
-    def set_nickname(cls, v):
-        return validate_nickname(v)
 
+    @validator("nickname", pre=True, always=True)
+    def validate_nickname_field(cls, value):
+        if value:
+            return validate_nickname(value)
+        return value
+ 
     class Config:
         from_attributes = True
 
 class UserCreate(UserBase):
-    password: str = Field(..., example="Secure*1234", min_length=8)
+    email: EmailStr = Field(..., example="john.doe@example.com")
+    password: str = Field(..., example="Secure*1234")
+    
+    @validator("password", pre=True, always=True)
+    def validate_password_field(cls, value):
+        if value:
+            validate_password(value)  # Raises a ValueError if invalid
+        return value
 
-    _validate_password = validator('password', pre=True, allow_reuse=True)(validate_password)
-
-class UserUpdate(BaseModel):
+class UserUpdate(UserBase):
     email: Optional[EmailStr] = Field(None, example="john.doe@example.com")
-    nickname: Optional[str] = Field(None, min_length=3, max_length=32, pattern=r'^[\w-]+$', example="john_doe123")
+    nickname: Optional[str] = Field(
+        None,
+        example=generate_nickname(),
+        min_length=3,
+        max_length=30
+    )
     first_name: Optional[str] = Field(None, example="John")
     last_name: Optional[str] = Field(None, example="Doe")
     bio: Optional[str] = Field(None, example="Experienced software developer specializing in web applications.")
     profile_picture_url: Optional[str] = Field(None, example="https://example.com/profiles/john.jpg")
-    linkedin_profile_url: Optional[str] = Field(None, example="https://linkedin.com/in/johndoe")
+    linkedin_profile_url: Optional[str] =Field(None, example="https://linkedin.com/in/johndoe")
     github_profile_url: Optional[str] = Field(None, example="https://github.com/johndoe")
-    role: Optional[UserRole] = Field(None, example="AUTHENTICATED")
-    password: Optional[str] = Field(None, example="NewSecure*1234")
-
-    _validate_password = validator('password', pre=True, allow_reuse=True)(validate_password)
+    role: Optional[str] = Field(None, example="AUTHENTICATED")
 
     @root_validator(pre=True)
     def check_at_least_one_value(cls, values):
+        """
+    Root validator to check if at least one field is provided for update.
+    
+    If no fields are provided, raises a ValueError with the message "At least one field must be provided for update".
+    """
+    
         if not any(values.values()):
             raise ValueError("At least one field must be provided for update")
         return values
 
+    @validator("nickname", pre=True, always=True)
+    def validate_nickname_field(cls, value):
+        if value:
+            return validate_nickname(value)
+        return value
+
 class UserResponse(UserBase):
     id: uuid.UUID = Field(..., example=uuid.uuid4())
-    is_professional: bool = Field(default=False)
+    email: EmailStr = Field(..., example="john.doe@example.com")
+    nickname: Optional[str] = Field(
+        None,
+        example=generate_nickname(),
+        min_length=3,
+        max_length=30
+    ) 
+    is_professional: Optional[bool] = Field(default=False, example=True)
     role: UserRole
+    is_locked: Optional[bool] = Field(default=False, example=True)
+    created_at: datetime = Field(..., example="2024-01-01T12:00:00")
+
+    @validator("nickname", pre=True, always=True)
+    def validate_nickname_field(cls, value):
+        """
+    Validate the nickname according to the rules:
+    - Must start with a letter.
+    - Must be 3-30 characters long.
+    - Can only contain alphanumeric characters, underscores, or hyphens.
+
+    This is used as a validator for the `nickname` field in the `UserResponse` model.
+    """
+        if value:
+            return validate_nickname(value)
+        return value
 
 class LoginRequest(BaseModel):
     email: str = Field(..., example="john.doe@example.com")
     password: str = Field(..., example="Secure*1234")
 
-    _validate_email = validator('email', pre=True, allow_reuse=True)(validate_email_address)
-    _validate_password = validator('password', pre=True, allow_reuse=True)(validate_password)
-
 class ErrorResponse(BaseModel):
     error: str = Field(..., example="Not Found")
     details: Optional[str] = Field(None, example="The requested resource was not found.")
 
-class UserListResponse(BaseModel):
-    items: List[UserResponse] = Field(..., example=[{
-        "id": uuid.uuid4(),
-        "nickname": "clever_raccoon_308",
-        "email": "john.doe@example.com",
-        "first_name": "John",
-        "last_name": "Doe",
-        "bio": "Experienced developer",
-        "role": "AUTHENTICATED",
-        "profile_picture_url": "https://example.com/profiles/john.jpg", 
-        "linkedin_profile_url": "https://linkedin.com/in/johndoe", 
-        "github_profile_url": "https://github.com/johndoe",
-        "is_professional": False
-    }])
-    total: int = Field(..., example=100)
-    page: int = Field(..., example=1)
-    size: int = Field(..., example=10)
-
-class UserRole(str, Enum):
-    VISITOR = "VISITOR"
-    REGISTERED = "REGISTERED"
-    SUPERVISOR = "SUPERVISOR"
-    SYSTEM_ADMIN = "SYSTEM_ADMIN"
-
-class LoginRequest(BaseModel):
-    account_email: EmailStr = Field(
-        ...,
-        example="user.name@organization.com",
-        description="The registered email address for the account"
-    )
-    access_code: str = Field(
-        ...,
-        min_length=10,
-        example="SecurePass#2024",
-        description="Minimum 10 character authentication code"
-    )
-
-    @validator('access_code')
-    def validate_access_code(cls, v):
-        if len(v) < 10:
-            raise ValueError("Access code must be at least 10 characters")
-        if not any(c.isupper() for c in v):
-            raise ValueError("Must contain at least one uppercase letter")
-        if not any(c.isdigit() for c in v):
-            raise ValueError("Must contain at least one digit")
-        return v
-
-class ErrorResponse(BaseModel):
-    error_type: str = Field(
-        ...,
-        example="AUTHENTICATION_FAILURE",
-        description="Machine-readable error code"
-    )
-    error_message: str = Field(
-        ...,
-        example="Invalid credentials provided",
-        description="Human-readable error details"
-    )
-    resolution_hint: Optional[str] = Field(
-        None,
-        example="Please check your email and password",
-        description="Suggested corrective action"
-    )
-
 class UserSearchFilterRequest(BaseModel):
-    search_query: Optional[str] = Field(
-        None,
-        example="john",
-        description="Searches both username and email fields"
-    )
-    account_status: Optional[UserRole] = Field(
-        None,
-        example="REGISTERED"
-    )
-    include_inactive: bool = Field(
-        False,
-        example=False,
-        description="Set to True to include locked accounts"
-    )
-    date_range_start: Optional[datetime] = Field(
-        None,
-        example="2024-01-01T00:00:00Z",
-        description="Start of account creation date range"
-    )
-    date_range_end: Optional[datetime] = Field(
-        None,
-        example="2024-12-31T23:59:59Z",
-        description="End of account creation date range"
-    )
-    results_per_page: int = Field(
-        20,
-        gt=0,
-        le=100,
-        example=20,
-        description="Number of records per response"
-    )
-    continuation_token: Optional[str] = Field(
-        None,
-        description="Token for paginating through large result sets"
-    )
+    username: Optional[str] = Field(None, example="john_doe")
+    email: Optional[EmailStr] = Field(None, example="john.doe@example.com")
+    role: Optional[UserRole] = Field(None, example="ADMIN")
+    is_locked: Optional[bool] = Field(None, example=False)
+    created_from: Optional[datetime] = Field(None, example="2024-01-01T00:00:00")
+    created_to: Optional[datetime] = Field(None, example="2024-12-31T23:59:59")
+    skip: int = Field(0, ge=0, example=0)
+    limit: int = Field(10, gt=0, le=100, example=10)
 
 class UserListResponse(BaseModel):
-    user_records: List[UserResponse]
-    total_results: int
-    current_page: int
-    page_size: int
-    navigation_links: Optional[List[PaginationLink]]
-    active_filters: Optional[UserSearchFilterRequest]
-    next_page_token: Optional[str] = Field(
-        None,
-        description="Token for retrieving next page of results"
-    )
+    items: List[UserResponse]
+    total: int
+    page: int
+    size: int
+    links: Optional[List[PaginationLink]]  # Accept PaginationLink objects directly
+    filters: Optional[UserSearchFilterRequest]  # Add filters for better client-side support
+
+class UserSearchQueryRequest(BaseModel):
+    username: Optional[str] = Field(None, example="john_doe", description="Search users by username.")
+    email: Optional[str] = Field(None, example="john.doe@example.com", description="Search users by email.")
+    role: Optional[UserRole] = Field(None, example="ADMIN", description="Filter users by role.")
+    is_locked: Optional[bool] = Field(None, example=False, description="Filter users by account lock status.")
+    skip: int = Field(0, ge=0, example=0, description="Pagination offset.")
+    limit: int = Field(10, gt=0, le=100, example=10, description="Number of records to retrieve.")
