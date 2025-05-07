@@ -46,6 +46,16 @@ class UserService:
 
     @classmethod
     async def get_by_nickname(cls, session: AsyncSession, nickname: str) -> Optional[User]:
+        """
+        Fetch a user by their nickname.
+
+        Args:
+            session (AsyncSession): SQLAlchemy session to use for the operation.
+            nickname (str): The nickname of the user to fetch.
+
+        Returns:
+            Optional[User]: The User object if found, None otherwise.
+        """
         return await cls._fetch_user(session, nickname=nickname)
 
     @classmethod
@@ -94,6 +104,17 @@ class UserService:
 
     @classmethod
     async def update(cls, session: AsyncSession, user_id: UUID, update_data: Dict[str, str]) -> Optional[User]:
+        """
+        Update an existing user with the provided data.
+
+        Args:
+            session (AsyncSession): SQLAlchemy session to use for the operation.
+            user_id (UUID): ID of the user to update.
+            update_data (Dict[str, str]): Dictionary of user fields to update.
+
+        Returns:
+            Optional[User]: The updated user object if successful, None if the user is not found or an exception occurs.
+        """
         try:
             # validated_data = UserUpdate(**update_data).dict(exclude_unset=True)
             validated_data = UserUpdate(**update_data).model_dump(exclude_unset=True)
@@ -137,6 +158,14 @@ class UserService:
 
     @classmethod
     async def login_user(cls, session: AsyncSession, nickname: str, password: str) -> Optional[User]:
+        """
+        Login a user by their nickname and password.
+
+        :param session: The database session for queries.
+        :param nickname: The nickname of the user to login.
+        :param password: The password of the user to login.
+        :return: The User object if the login was successful, None otherwise.
+        """
         user = await cls.get_by_nickname(session, nickname=nickname)
         if user:
             logger.info(f"User with ID found")
@@ -179,6 +208,14 @@ class UserService:
 
     @classmethod
     async def verify_email_with_token(cls, session: AsyncSession, user_id: UUID, token: str) -> bool:
+        """
+        Verify user's email with a provided token.
+
+        :param session: The AsyncSession instance for database access.
+        :param user_id: UUID of the user to verify.
+        :param token: Verification token sent to the user's email.
+        :return: True if the email was verified, False otherwise.
+        """
         user = await cls.get_by_id(session, user_id)
         if user and user.verification_token == token:
             user.email_verified = True
@@ -204,6 +241,14 @@ class UserService:
     
     @classmethod
     async def unlock_user_account(cls, session: AsyncSession, user_id: UUID) -> bool:
+        """
+        Unlock a user account.
+
+        :param session: The AsyncSession instance for database access.
+        :param user_id: The UUID of the user to unlock.
+        :return: True if the user was unlocked, False otherwise.
+        """
+        
         user = await cls.get_by_id(session, user_id)
         if user and user.is_locked:
             user.is_locked = False
@@ -212,3 +257,78 @@ class UserService:
             await session.commit()
             return True
         return False
+    
+    @classmethod
+    async def search_and_filter_users(
+        cls,
+        session: AsyncSession,
+        username: Optional[str] = None,
+        email: Optional[str] = None,
+        role: Optional[UserRole] = None,
+        is_locked: Optional[bool] = None,
+        skip: int = 0,
+        limit: int = 10,
+    ):
+        """
+        Perform basic user search and filtering.
+
+        Parameters:
+            - session: Database session.
+            - username: Filter by username.
+            - email: Filter by email.
+            - role: Filter by user role.
+            - is_locked: Filter by account lock status.
+            - skip: Pagination offset.
+            - limit: Pagination limit.
+
+        Returns:
+            Tuple of total count and list of users matching criteria.
+        """
+        query = select(User)
+        if username:
+            query = query.where(User.nickname.ilike(f"%{username}%"))
+        if email:
+            query = query.where(User.email.ilike(f"%{email}%"))
+        if role:
+            query = query.where(User.role == role)
+        if is_locked is not None:
+            query = query.where(User.is_locked == is_locked)
+
+        total_users = await session.execute(select(func.count()).select_from(query.subquery()))
+        result = await session.execute(query.offset(skip).limit(limit))
+
+        return total_users.scalar(), result.scalars().all()
+
+    @classmethod
+    async def advanced_search_users(cls, session: AsyncSession, filters: Dict):
+        """
+        Perform advanced search based on multiple criteria.
+
+        Parameters:
+            - session: Database session.
+            - filters: Dictionary containing filter criteria.
+
+        Returns:
+            Tuple of total count and list of users matching criteria.
+        """
+        query = select(User)
+
+        # Apply filters dynamically
+        for field, value in filters.items():
+            if field == "username":
+                query = query.where(User.nickname.ilike(f"%{value}%"))
+            elif field == "email":
+                query = query.where(User.email.ilike(f"%{value}%"))
+            elif field == "role":
+                query = query.where(User.role == value)
+            elif field == "is_locked":
+                query = query.where(User.is_locked == value)
+            elif field == "created_from":
+                query = query.where(User.created_at >= value)
+            elif field == "created_to":
+                query = query.where(User.created_at <= value)
+
+        total_users = await session.execute(select(func.count()).select_from(query.subquery()))
+        result = await session.execute(query.offset(filters.get("skip", 0)).limit(filters.get("limit", 10)))
+
+        return total_users.scalar(), result.scalars().all()
