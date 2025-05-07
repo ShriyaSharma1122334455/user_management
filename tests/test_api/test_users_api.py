@@ -3,7 +3,7 @@ import pytest
 from httpx import AsyncClient
 from app.main import app
 from app.models.user_model import User, UserRole
-from app.utils.nickname_gen import validate_or_generate_nickname, generate_random_nickname
+from app.utils.nickname_gen import generate_nickname
 from app.utils.security import hash_password
 from app.services.jwt_service import decode_token  # Import your FastAPI app
 import logging
