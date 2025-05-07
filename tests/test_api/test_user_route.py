@@ -480,6 +480,36 @@ async def test_advanced_search_pagination_links(async_client, admin_token, users
     assert any(link["rel"] == "next" for link in links)
     assert any(link["rel"] == "prev" for link in links)
 
+# @pytest.mark.asyncio
+# async def test_create_user_success(async_client, admin_token):
+#     """Test successful user creation with provided nickname."""
+#     headers = {"Authorization": f"Bearer {admin_token}"}
+#     user_data = {
+#         "email": "user@example.com",
+#         "password": "ValidPassword123!",
+#         "nickname": "valid_nickname",  # Explicit nickname
+#         "role": "ANONYMOUS"
+#     }
+
+#     with patch("app.services.email_service.EmailService.send_verification_email", new_callable=AsyncMock) as mock_send_email:
+#         mock_send_email.return_value = None
+        
+#         # Patch the nickname generation function to ensure it is not called
+#         with patch("app.utils.nickname_gen.generate_nickname") as mock_nickname:
+#             response = await async_client.post("/users/", json=user_data, headers=headers)
+            
+#             # Verify the mock wasn't called since we provided a nickname explicitly
+#             mock_nickname.assert_not_called()
+            
+#             # Assertions
+#             assert response.status_code == 201, response.json()
+#             response_data = response.json()
+            
+#             # Ensure the returned nickname matches the one provided
+#             assert response_data["email"] == user_data["email"]
+#             assert response_data["nickname"] == user_data["nickname"]
+#             assert response_data["role"] == user_data["role"]
+
 @pytest.mark.asyncio
 async def test_create_user_success(async_client, admin_token):
     """Test successful user creation with provided nickname."""
@@ -494,17 +524,17 @@ async def test_create_user_success(async_client, admin_token):
     with patch("app.services.email_service.EmailService.send_verification_email", new_callable=AsyncMock) as mock_send_email:
         mock_send_email.return_value = None
         
-        # Patch where the function is actually imported and used
-        # This might be in your route file or service file
-        with patch("app.api.endpoints.users.generate_nickname") as mock_nickname:
-            response = await async_client.post("/users/", json=user_data, headers=headers)
+        # Make the API call
+        response = await async_client.post("/users/", json=user_data, headers=headers)
             
-            # Verify the mock wasn't called
-            mock_nickname.assert_not_called()
-            
-            # Assertions
-            assert response.status_code == 201, response.json()
-            response_data = response.json()
-            assert response_data["email"] == user_data["email"]
-            assert response_data["nickname"] == user_data["nickname"]
-            assert response_data["role"] == user_data["role"]
+        # Assertions
+        assert response.status_code == 201, response.json()
+        response_data = response.json()
+        
+        # Check if the response contains the provided nickname
+        assert response_data["email"] == user_data["email"]
+        assert response_data["nickname"] == user_data["nickname"]
+        assert response_data["role"] == user_data["role"]
+        
+        # Verify that the email service was called
+        mock_send_email.assert_called_once()

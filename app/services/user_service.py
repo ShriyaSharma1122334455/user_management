@@ -10,7 +10,7 @@ from app.dependencies import get_email_service, get_settings
 from app.models.user_model import User
 from app.schemas.user_schemas import UserCreate, UserUpdate
 from app.utils.nickname_gen import generate_nickname
-# from app.utils.nickname_gen import validate_or_generate_nickname
+
 from app.utils.security import generate_verification_token, hash_password, verify_password
 from uuid import UUID
 from app.services.email_service import EmailService
@@ -68,31 +68,29 @@ class UserService:
         try:
             validated_data = UserCreate(**user_data).model_dump()
         
-        # Check for existing email
+            # Check for existing email
             if await cls.get_by_email(session, validated_data['email']):
                 raise HTTPException(status_code=400, detail="Email already registered")
         
-        # Handle nickname
-            provided_nickname = validated_data.get('nickname')
-            validated_data['nickname'] = await generate_nickname(
-                session, 
-                provided_nickname
-            )
+            # Handle nickname - only generate if not provided
+            if not validated_data.get('nickname'):
+                validated_data['nickname'] = generate_nickname()
+            # Otherwise, keep the nickname that was provided in validated_data
         
-        # Hash password and create user
+            # Hash password and create user
             validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
             new_user = User(**validated_data)
         
-        # Set role
+            # Set role
             user_count = await cls.count(session)
             new_user.role = UserRole.ADMIN if user_count == 0 else UserRole.ANONYMOUS
         
-        # Save to database
+            # Save to database
             session.add(new_user)
             await session.commit()
             await session.refresh(new_user)
         
-        # Send verification email if not admin
+            # Send verification email if not admin
             if new_user.role != UserRole.ADMIN:
                 await email_service.send_verification_email(new_user.email)
         
